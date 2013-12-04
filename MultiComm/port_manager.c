@@ -79,7 +79,7 @@ void start_port_manager(struct port_manager * manager) {
 	}
 	for(i=0;i<manager->gather_num;i++)
 	{
-		//start_gather_port(manager->gathers[i]);
+		start_gather_port(manager->gathers[i]);
 	}
 
 
@@ -116,6 +116,10 @@ void to_can_data(struct port_manager* manager,char* buffer)
 
 }
 
+void to_serial_data(struct port_manager*manager,char *buffer)
+{
+
+}
 
 
 static char *get_sys_port(char * port) {

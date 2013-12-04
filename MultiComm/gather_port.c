@@ -15,9 +15,11 @@
 
 #include "gather_port.h"
 #include "frame_manager.h"
+#include "port_manager.h"
 
 #define MAX_GATHER_NUM (10)
 
+#define QUERY_INTERVAL	(1000000) //1S
 static int open_serial(char *port, int baudrate);
 static speed_t get_speed(int baudrate);
 static void * proc_work(void * data);
@@ -73,6 +75,7 @@ static void * proc_work(void * data) {
 	int lost = 0;
 	struct gather_port* pgather = (struct gather_port*) data;
 	struct frame_manager *pManager = pgather->frame_manager;
+	struct port_manager * portManager = get_port_manager();
 	while (1) {
 
 		lost = 0;
@@ -88,16 +91,40 @@ static void * proc_work(void * data) {
 			tx_frame[3] = 0xff; //all channel
 			send_frame(pManager, tx_frame, 4);
 
-			get_frame(pManager, rx_frame, &length, 10);
+			get_frame(pManager, rx_frame + 10, &length, 10);
+			if (length > 0) {
+				gettimeofday(&stop, 0);
+				rx_frame[0] = 0x02; //Serial-data
+				rx_frame[1] = pgather->portIndex; //COM Num
+
+				long tv_sec = (long) (stop.tv_sec);
+				rx_frame[2] = (tv_sec & 0xff);
+				rx_frame[3] = ((tv_sec >> 8) & 0xff);
+				rx_frame[4] = ((tv_sec >> 16) & 0xff);
+				rx_frame[5] = ((tv_sec >> 24) & 0xff);
+				long tv_usec = (long) (stop.tv_usec);
+				rx_frame[6] = (tv_usec & 0xff);
+				rx_frame[7] = ((tv_usec >> 8) & 0xff);
+				rx_frame[8] = ((tv_usec >> 16) & 0xff);
+				rx_frame[9] = ((tv_usec >> 24) & 0xff);
+
+				send_network_data(portManager, rx_frame, 0, length +10);
+			}
 			if (length <= 0) {
 				lost++;
 			}
-			//printf("OK\r\n");
 		}
 		gettimeofday(&stop, 0);
+		timeval_subtract(&diff, &start, &stop);
+
+		__useconds_t interval = diff.tv_sec * 1000000 + diff.tv_usec;
+
+		if (interval < QUERY_INTERVAL) {
+			usleep(QUERY_INTERVAL - interval);
+		}
 		if (lost == 0) {
-			timeval_subtract(&diff, &start, &stop);
-			printf("total time:%d us\r\n", diff.tv_usec);
+
+			//printf("total time:%d us\r\n", (int) diff.tv_usec);
 		}
 	}
 

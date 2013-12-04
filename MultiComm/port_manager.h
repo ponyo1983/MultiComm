@@ -38,5 +38,5 @@ void stop_port_manager(struct port_manager * manager);
 
 void send_network_data(struct port_manager * manager,char* buffer,int offset,int length);
 void to_can_data(struct port_manager* manager,char* buffer);
-
+void to_serial_data(struct port_manager* manager,char* buffer);
 #endif /* PORT_MANAGER_H_ */

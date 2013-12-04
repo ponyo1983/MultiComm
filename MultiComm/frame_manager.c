@@ -147,12 +147,14 @@ static void put_frame(struct frame_manager * manager, char* frame, int length) {
 
 	char * buffer = manager->frame_array[wrIndex];
 
+	length-=4;
+
 	buffer[0] = length & 0xff;
 	buffer[1] = length >> 8;
 
 	int i;
 	for (i = 0; i < length; i++) {
-		buffer[2] = frame[i];
+		buffer[2+i] = frame[2+i];
 	}
 
 	if (cnt < MAX_FRAME_COUNT) {

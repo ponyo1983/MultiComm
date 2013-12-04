@@ -18,6 +18,7 @@ struct gather_port
   int used;
   int serial_fd;
   char  serial_name[50];
+  char portIndex;
   int baudrate;
 
   struct frame_manager * frame_manager;
