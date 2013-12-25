@@ -17,6 +17,14 @@
 
 int main(int argc, char**argv) {
 
+
+	if(daemon(1, 1)==-1)
+	{
+		exit(-1);
+		perror("daemon error\r\n");
+	}
+
+
 	chdir(dirname(argv[0])); //change current dir to application dir
 
 
@@ -24,17 +32,7 @@ int main(int argc, char**argv) {
 
 	start_port_manager(manager);
 
-//	struct gather* pgather1 = create_gather("/dev/ttySAC0", 57600);
-//
-//	start_gather(pgather1);
-//
-//	struct gather* pgather2 = create_gather("/dev/ttySAC1", 57600);
-//
-//	start_gather(pgather2);
-//
-//	struct gather* pgather3 = create_gather("/dev/ttySAC2", 57600);
-//
-//	start_gather(pgather3);
+
 
 	pthread_exit(NULL);
 
