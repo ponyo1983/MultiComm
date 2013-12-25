@@ -50,6 +50,29 @@ void stop_frame_manager(struct frame_manager * manager) {
 
 }
 
+static void set_rx_time(struct frame_manager* manager) {
+	pthread_mutex_lock(&(manager->mutext));
+	gettimeofday(&(manager->last_rx_time), NULL);
+	pthread_mutex_unlock(&(manager->mutext));
+}
+
+/*
+ *
+ * */
+int serial_rx_timeout(struct frame_manager* manager) {
+
+	struct timeval now;
+	int interval = 0;
+	gettimeofday(&now, NULL);
+	pthread_mutex_lock(&(manager->mutext));
+
+	interval = (now.tv_sec - manager->last_rx_time.tv_sec) * 1000;
+	interval += (now.tv_usec - manager->last_rx_time.tv_usec) / 1000;
+
+	pthread_mutex_unlock(&(manager->mutext));
+	return interval;
+}
+
 static void * serial_rx(void * data) {
 	struct frame_manager* manager = (struct frame_manager*) data;
 	char* rx_buffer = manager->rx_buffer;
@@ -59,8 +82,14 @@ static void * serial_rx(void * data) {
 	int metDLE = 0;
 	int frameLength = 0;
 
+	set_rx_time(manager); //initialize rx time
+
 	while (1) {
-		int length = read(serial_fd, rx_buffer, MAX_RX_FRAME_LENGTH);
+		int length = read(serial_fd, rx_buffer, RX_BUFFER_SIZE);
+
+		if (length > 0) {
+			set_rx_time(manager);
+		}
 
 		for (i = 0; i < length; i++) {
 
@@ -147,14 +176,14 @@ static void put_frame(struct frame_manager * manager, char* frame, int length) {
 
 	char * buffer = manager->frame_array[wrIndex];
 
-	length-=4;
+	length -= 4;
 
 	buffer[0] = length & 0xff;
 	buffer[1] = length >> 8;
 
 	int i;
 	for (i = 0; i < length; i++) {
-		buffer[2+i] = frame[2+i];
+		buffer[2 + i] = frame[2 + i];
 	}
 
 	if (cnt < MAX_FRAME_COUNT) {

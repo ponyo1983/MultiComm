@@ -14,6 +14,8 @@
 #define MAX_FRAME_COUNT (4)
 #define MAX_TX_FRAME_LENGTH	(128)
 
+#define RX_BUFFER_SIZE (32)
+
 #define DLE (0x10)
 #define STX (0x02)
 #define ETX (0x03)
@@ -25,7 +27,7 @@ struct frame_manager
 	int wrIndex;
 	int frame_count;
 	char frame_array [MAX_FRAME_COUNT][MAX_RX_FRAME_LENGTH];
-	char rx_buffer[MAX_RX_FRAME_LENGTH];
+	char rx_buffer[RX_BUFFER_SIZE];
 	char frame_buffer[MAX_RX_FRAME_LENGTH];
 	char tx_buffer[MAX_TX_FRAME_LENGTH];
 	int serial_fd;
@@ -35,7 +37,7 @@ struct frame_manager
 
 	pthread_t thread_rx;
 
-
+	struct timeval last_rx_time;
 
 };
 
@@ -49,5 +51,7 @@ void clear_all_frame(struct frame_manager * manager);
 void send_frame(struct frame_manager *manager,char* frame,int length);
 void get_frame(struct frame_manager * manager, char * buffer, int *length,
 		int timeout_ms);
+
+int serial_rx_timeout(struct frame_manager* manager);
 
 #endif /* FRAME_MANAGER_H_ */

@@ -13,6 +13,25 @@
 #include <pthread.h>
 #include "frame_manager.h"
 
+#define MAX_SENSOR	(200)
+
+struct smart_sensor
+{
+	struct gather_port * port;
+	int addr;
+	int type;
+
+	char *tx_data;
+	char *rx_data;
+
+	void (*query_digit)(struct smart_sensor *sensor);
+	void (*query_analog)(struct smart_sensor *sensor);
+	void (*query_curve)(struct smart_sensor *sensor);
+	void (*query_others)(struct smart_sensor *sensor);
+
+};
+
+
 struct gather_port
 {
   int used;
@@ -21,17 +40,16 @@ struct gather_port
   char portIndex;
   int baudrate;
 
+  char tx_data[128];
+  char rx_data[1024*4];
+  int sensor_num;
+  struct smart_sensor  sensors[MAX_SENSOR];
   struct frame_manager * frame_manager;
   pthread_t thread_wk;
 
 
 };
 
-struct smart_sensor
-{
-	int addr;
-	int type;
-};
 
 
 
@@ -42,5 +60,6 @@ void gather_add_module(int addr,int type);
 void start_gather_port(struct gather_port* pgather);
 void stop_gather_port(struct gather_port* pgather);
 
+void add_sensor_II(struct gather_port *port, int addr, int type);
 
 #endif /* GATHER_H_ */

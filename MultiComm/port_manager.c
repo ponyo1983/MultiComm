@@ -24,7 +24,7 @@ static struct port_manager * manager_global = NULL;
 
 struct port_manager * get_port_manager() {
 	if (manager_global == NULL) {
-		int i;
+		int i, j;
 		manager_global = (struct port_manager*) malloc(
 				sizeof(struct port_manager));
 
@@ -43,17 +43,28 @@ struct port_manager * get_port_manager() {
 		for (i = 0; i < portNum; i++) {
 			struct port_config* port = config->ports + i;
 
-			if (strncmp(port->type, "CAN", 3) == 0) {
+			if (strncmp(port->type, "CAN", 3) == 0) //CAN数据
+					{
 				struct can_port* canPort = create_can_port(port->name,
 						port->baudrate);
 				insert_can_port(manager_global, canPort);
 			} else if (strncmp(port->type, "RS", 2) == 0) {
-				if (port->workMode == 1) //smart sensor
+				if (port->workMode == 2) //smart sensor II型智能传感器
 						{
 					char * serial = get_sys_port(port->name);
 					struct gather_port* gather_port = create_gather(serial,
 							port->baudrate);
-					insert_gather_port(manager_global, gather_port);
+					if (gather_port != NULL) {
+
+						gather_port->portIndex=atoi(port->name+3);
+						for (j = 0; j < port->sensorNum; j++)  //创建智能传感器
+						{
+							add_sensor_II(gather_port, port->sensors[j].addr,
+									port->sensors[j].type);
+						}
+
+						insert_gather_port(manager_global, gather_port);
+					}
 
 				}
 
@@ -73,15 +84,12 @@ void start_port_manager(struct port_manager * manager) {
 		start_network(manager->network);
 	}
 
-	for(i=0;i<manager->can_num;i++)
-	{
+	for (i = 0; i < manager->can_num; i++) {
 		start_can_port(manager->can_ports[i]);
 	}
-	for(i=0;i<manager->gather_num;i++)
-	{
+	for (i = 0; i < manager->gather_num; i++) {
 		start_gather_port(manager->gathers[i]);
 	}
-
 
 }
 
@@ -89,38 +97,33 @@ void stop_port_manager(struct port_manager * manager) {
 
 }
 
-void send_network_data(struct port_manager * manager,char* buffer,int offset,int length)
-{
-	if(manager==NULL) return;
+void send_network_data(struct port_manager * manager, char* buffer, int offset,
+		int length) {
+	if (manager == NULL)
+		return;
 
-	network_send(manager->network,buffer,offset,length);
+	network_send(manager->network, buffer, offset, length);
 }
 
 /*
  * data struct :byte[0]-portIndex, byte[1-4] can-ID ,byte[5]-data-length ,byte[6-N] can-data
  * */
-void to_can_data(struct port_manager* manager,char* buffer)
-{
-	char portIndex=buffer[0];
+void to_can_data(struct port_manager* manager, char* buffer) {
+	char portIndex = buffer[0];
 
 	int i;
-	for(i=0;i<manager->can_num;i++)
-	{
-		if(manager->can_ports[i]->portIndex==portIndex)
-		{
-			send_can_data(manager->can_ports[i],buffer+1);
+	for (i = 0; i < manager->can_num; i++) {
+		if (manager->can_ports[i]->portIndex == portIndex) {
+			send_can_data(manager->can_ports[i], buffer + 1);
 			break;
 		}
 	}
 
-
 }
 
-void to_serial_data(struct port_manager*manager,char *buffer)
-{
+void to_serial_data(struct port_manager*manager, char *buffer) {
 
 }
-
 
 static char *get_sys_port(char * port) {
 	static char* sys_port[] = { "/dev/ttySAC5", "/dev/ttySAC3", "/dev/ttySAC2",
