@@ -51,6 +51,10 @@ struct gather_port * create_gather(char* serial_name, int baudrate) {
 			gather_array[i].baudrate = baudrate;
 			gather_array[i].sensor_num = 0;
 			int serial_fd = open_serial(serial_name, baudrate);
+//			if(serial_fd!=0)
+//			{
+//				printf("%s\r\n",serial_name);
+//			}
 			gather_array[i].serial_fd = serial_fd;
 			gather_array[i].frame_manager = create_frame_manager(serial_fd);
 			break;
@@ -82,21 +86,52 @@ void add_sensor_II(struct gather_port *port, int addr, int type) {
 	sensor->query_analog = NULL;
 	sensor->query_curve = NULL;
 	switch (type) {
-	case 0x10: //Type II 交流道表
+	case 16: //Type II 交流道岔表示
 		sensor->query_analog = query_analog;
 		port->sensor_num++;
 		break;
-	case 0x11: //Type II 直流道表
+	case 17: //Type II 直流道岔表示
 		sensor->query_analog = query_analog;
 		port->sensor_num++;
 		break;
-	case 0x12: //Type II 轨道电路传感器
+	case 18: //Type II 轨道电路传感器
 
 		break;
-	case 0x13: //交流转辙机智能传感器
+	case 19: //交流转辙机智能传感器
 		sensor->query_digit = query_digital;
 		sensor->query_analog = query_analog;
 		sensor->query_curve = query_curve;
+		port->sensor_num++;
+		break;
+	case 21: //高压不对称 ,怎么查询曲线??
+		sensor->query_analog = query_analog;
+		port->sensor_num++;
+		break;
+	case 23: // 半自动闭塞传感器
+		sensor->query_analog = query_analog;
+		port->sensor_num++;
+		break;
+	case 24: //站联电压智能传感器
+		sensor->query_analog = query_analog;
+		port->sensor_num++;
+		break;
+	case 25: //直流道岔传感器
+		sensor->query_digit = query_digital;
+		sensor->query_curve = query_curve;
+		port->sensor_num++;
+
+		break;
+	case 26: //站内点码化
+		sensor->query_analog = query_analog;
+		port->sensor_num++;
+		break;
+	case 29: //无绝缘移频发送传感器
+		sensor->query_analog = query_analog;
+		port->sensor_num++;
+		break;
+
+	case 30: //无绝缘移频接收传感器
+		sensor->query_analog = query_analog;
 		port->sensor_num++;
 		break;
 
@@ -144,9 +179,7 @@ static void query_data(struct smart_sensor *sensor, char type) {
 		}
 	} else if (type == TYPE_CURVE) {
 		while (1) {
-			int interval = serial_rx_timeout(pManager);
-			if (interval > 20)
-				break;
+
 			get_frame(pManager, rx_frame + 10, &length, WAIT_TIMEOUT);
 			if (length > 0) {
 				gettimeofday(&tm, NULL);
@@ -166,11 +199,15 @@ static void query_data(struct smart_sensor *sensor, char type) {
 
 				send_network_data(portManager, rx_frame, 0, length + 10);
 
-				if ((rx_frame[4] == TYPE_CURVE) && (rx_frame[5] == 0xff)) //no curve data
+				if ((rx_frame[14] == TYPE_CURVE) && (rx_frame[15] == 0xff)) //no curve data
 						{
 					break;
 				}
 			}
+
+			int interval = serial_rx_timeout(pManager);
+						if (interval > WAIT_TIMEOUT)
+							break;
 		}
 	}
 }
@@ -235,7 +272,7 @@ static void * proc_work(void * data) {
 		gettimeofday(&stop, NULL);
 		timeval_subtract(&diff, &start, &stop);
 
-		__useconds_t interval = diff.tv_sec * 1000000 + diff.tv_usec+10000;
+		__useconds_t interval = diff.tv_sec * 1000000 + diff.tv_usec + 10000;
 
 		if (interval < QUERY_INTERVAL) {
 			usleep(QUERY_INTERVAL - interval);
@@ -301,6 +338,7 @@ static int open_serial(char *port, int baudrate) {
 
 	tty.c_cflag |= CREAD | CLOCAL; // turn on READ & ignore ctrl lines
 	tty.c_iflag &= ~(IXON | IXOFF | IXANY); // turn off s/w flow ctrl
+	tty.c_iflag &= ~(INLCR | IGNCR | ICRNL);
 	tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG); // make raw
 	tty.c_oflag &= ~OPOST; // make raw
 

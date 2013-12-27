@@ -49,16 +49,18 @@ struct port_manager * get_port_manager() {
 						port->baudrate);
 				insert_can_port(manager_global, canPort);
 			} else if (strncmp(port->type, "RS", 2) == 0) {
+				char * serial = get_sys_port(port->name);
+
 				if (port->workMode == 2) //smart sensor II型智能传感器
 						{
-					char * serial = get_sys_port(port->name);
+
 					struct gather_port* gather_port = create_gather(serial,
 							port->baudrate);
 					if (gather_port != NULL) {
 
-						gather_port->portIndex=atoi(port->name+3);
+						gather_port->portIndex = atoi(port->name + 3);
 						for (j = 0; j < port->sensorNum; j++)  //创建智能传感器
-						{
+								{
 							add_sensor_II(gather_port, port->sensors[j].addr,
 									port->sensors[j].type);
 						}

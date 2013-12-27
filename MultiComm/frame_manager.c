@@ -95,7 +95,8 @@ static void * serial_rx(void * data) {
 
 			switch (rx_buffer[i]) {
 			case DLE:
-				if (frameLength >= 2 && (metDLE == 0)) {
+				if(metDLE==0)
+				{
 					frame_buffer[frameLength] = DLE;
 					frameLength++;
 				}

@@ -35,10 +35,12 @@ struct config_global * get_global_config() {
 		for (i = 1; i <= portNum; i++) {
 			sprintf(buffer, "Port%d", i);
 			char * portName = get_ini_string(config_doc, buffer, "Name");
+
 			char * portType = get_ini_string(config_doc, buffer, "Type");
 			int baudrate = get_ini_int(config_doc, buffer, "Baudrate");
 			int workMode = get_ini_int(config_doc, buffer, "WorkMode");
 			int sensorNum=get_ini_int(config_doc, buffer, "SensorNum");
+
 			struct port_config * pPort = insert_port_config(global_config, portName,
 					portType, baudrate, workMode);
 			if(pPort==NULL) break;
