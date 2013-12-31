@@ -36,6 +36,8 @@ struct gather_port
 {
   int used;
   int serial_fd;
+  int tx_led_fd;
+  int rx_led_fd;
   char  serial_name[50];
   char portIndex;
   int baudrate;
@@ -61,5 +63,6 @@ void start_gather_port(struct gather_port* pgather);
 void stop_gather_port(struct gather_port* pgather);
 
 void add_sensor_II(struct gather_port *port, int addr, int type);
+
 
 #endif /* GATHER_H_ */

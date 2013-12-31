@@ -22,6 +22,8 @@
 #define QUERY_INTERVAL	(1000000) //1S
 #define WAIT_TIMEOUT (30)	//30ms
 
+#define LED_DELAY	"30"
+
 static int open_serial(char *port, int baudrate);
 static speed_t get_speed(int baudrate);
 static void * proc_work(void * data);
@@ -139,6 +141,17 @@ void add_sensor_II(struct gather_port *port, int addr, int type) {
 
 }
 
+static void trigger_tx(struct gather_port* port) {
+	if (port->tx_led_fd > 0) {
+		write(port->tx_led_fd, "1", 1);
+	}
+}
+static void trigger_rx(struct gather_port* port) {
+	if (port->rx_led_fd > 0) {
+		write(port->rx_led_fd, "1", 1);
+	}
+}
+
 static void query_data(struct smart_sensor *sensor, char type) {
 
 	struct gather_port* pgather = sensor->port;
@@ -156,7 +169,7 @@ static void query_data(struct smart_sensor *sensor, char type) {
 	tx_frame[2] = type; //request [type-digital,analog etc] data
 	tx_frame[3] = 0xff; //all channel
 	send_frame(pManager, tx_frame, 4);
-
+	trigger_tx(pgather);
 	if (type == TYPE_ANALOG || type == TYPE_DIGITAL) {
 		get_frame(pManager, rx_frame + 10, &length, WAIT_TIMEOUT);
 		if (length > 0) {
@@ -176,6 +189,7 @@ static void query_data(struct smart_sensor *sensor, char type) {
 			rx_frame[9] = ((tv_usec >> 24) & 0xff);
 
 			send_network_data(portManager, rx_frame, 0, length + 10);
+			trigger_rx(pgather);
 		}
 	} else if (type == TYPE_CURVE) {
 		while (1) {
@@ -199,15 +213,15 @@ static void query_data(struct smart_sensor *sensor, char type) {
 
 				send_network_data(portManager, rx_frame, 0, length + 10);
 
-				if ((rx_frame[14] == TYPE_CURVE) && (rx_frame[15] == 0xff)) //no curve data
-						{
+				trigger_rx(pgather);
+				if ((rx_frame[14] == TYPE_CURVE) && (rx_frame[15] == 0xff)) { ////no curve data
 					break;
 				}
 			}
 
 			int interval = serial_rx_timeout(pManager);
-						if (interval > WAIT_TIMEOUT)
-							break;
+			if (interval > WAIT_TIMEOUT)
+				break;
 		}
 	}
 }
@@ -224,8 +238,39 @@ static void query_curve(struct smart_sensor *sensor) {
 	query_data(sensor, 0x60);
 }
 
+static void config_led(struct gather_port * pgather) {
+	char led_name[30];
+	int fd;
+	sprintf(led_name, "/sys/class/leds/com%d_tx/delay_on", pgather->portIndex);
+	fd = open(led_name, O_WRONLY);
+	if (fd > 0) {
+		write(fd, LED_DELAY, 2);
+	}
+	sprintf(led_name, "/sys/class/leds/com%d_tx/delay_off", pgather->portIndex);
+	fd = open(led_name, O_WRONLY);
+	if (fd > 0) {
+		write(fd, LED_DELAY, 2);
+	}
+	sprintf(led_name, "/sys/class/leds/com%d_rx/delay_on", pgather->portIndex);
+	fd = open(led_name, O_WRONLY);
+	if (fd > 0) {
+		write(fd, LED_DELAY, 2);
+	}
+	sprintf(led_name, "/sys/class/leds/com%d_rx/delay_off", pgather->portIndex);
+	fd = open(led_name, O_WRONLY);
+	if (fd > 0) {
+		write(fd, LED_DELAY, 2);
+	}
+	sprintf(led_name, "/sys/class/leds/com%d_rx/shot", pgather->portIndex);
+	pgather->rx_led_fd = open(led_name, O_WRONLY);
+
+	sprintf(led_name, "/sys/class/leds/com%d_tx/shot", pgather->portIndex);
+	pgather->tx_led_fd = open(led_name, O_WRONLY);
+}
+
 void start_gather_port(struct gather_port * pgather) {
 
+	config_led(pgather);
 	start_frame_manager(pgather->frame_manager);
 
 	pthread_t * thread = &(pgather->thread_wk);

@@ -17,7 +17,8 @@ struct can_port {
 	char name[8];
 	char type[8];
 	int bandrate;
-
+	int tx_led_fd;
+	int rx_led_fd;
 	int socket;
 	pthread_t threadRx;
 
