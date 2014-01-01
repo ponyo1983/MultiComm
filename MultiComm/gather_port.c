@@ -24,6 +24,8 @@
 
 #define LED_DELAY	"30"
 
+#define MAX_TIMEOUT_COUNT (5)
+
 static int open_serial(char *port, int baudrate);
 static speed_t get_speed(int baudrate);
 static void * proc_work(void * data);
@@ -37,7 +39,10 @@ static void query_curve(struct smart_sensor *sensor);
 static struct gather_port gather_array[MAX_GATHER_NUM];
 
 enum query_type {
-	TYPE_DIGITAL = 0x20, TYPE_ANALOG = 0x30, TYPE_CURVE = 0x60,
+	TYPE_VERSION = 0x07,
+	TYPE_DIGITAL = 0x20,
+	TYPE_ANALOG = 0x30,
+	TYPE_CURVE = 0x60,
 };
 
 struct gather_port * create_gather(char* serial_name, int baudrate) {
@@ -53,12 +58,10 @@ struct gather_port * create_gather(char* serial_name, int baudrate) {
 			gather_array[i].baudrate = baudrate;
 			gather_array[i].sensor_num = 0;
 			int serial_fd = open_serial(serial_name, baudrate);
-//			if(serial_fd!=0)
-//			{
-//				printf("%s\r\n",serial_name);
-//			}
+
 			gather_array[i].serial_fd = serial_fd;
 			gather_array[i].frame_manager = create_frame_manager(serial_fd);
+			gather_array[i].last_badsensor = 0;
 			break;
 		}
 	}
@@ -82,19 +85,28 @@ void add_sensor_II(struct gather_port *port, int addr, int type) {
 	sensor->port = port;
 	sensor->addr = addr;
 	sensor->type = type;
+	sensor->timeout_count = 0;
 	sensor->tx_data = port->tx_data;
 	sensor->rx_data = port->rx_data;
 	sensor->query_digit = NULL;
 	sensor->query_analog = NULL;
 	sensor->query_curve = NULL;
-	switch (type) {
+	port->sensor_num++;
+
+}
+
+static void init_sensor(struct smart_sensor* sensor) {
+	sensor->query_digit = NULL;
+	sensor->query_analog = NULL;
+	sensor->query_curve = NULL;
+	switch (sensor->type) {
 	case 16: //Type II 交流道岔表示
 		sensor->query_analog = query_analog;
-		port->sensor_num++;
+
 		break;
 	case 17: //Type II 直流道岔表示
 		sensor->query_analog = query_analog;
-		port->sensor_num++;
+
 		break;
 	case 18: //Type II 轨道电路传感器
 
@@ -103,42 +115,33 @@ void add_sensor_II(struct gather_port *port, int addr, int type) {
 		sensor->query_digit = query_digital;
 		sensor->query_analog = query_analog;
 		sensor->query_curve = query_curve;
-		port->sensor_num++;
 		break;
 	case 21: //高压不对称 ,怎么查询曲线??
-		sensor->query_analog = query_analog;
-		port->sensor_num++;
+		//sensor->query_analog = query_analog;
 		break;
 	case 23: // 半自动闭塞传感器
 		sensor->query_analog = query_analog;
-		port->sensor_num++;
 		break;
 	case 24: //站联电压智能传感器
 		sensor->query_analog = query_analog;
-		port->sensor_num++;
 		break;
 	case 25: //直流道岔传感器
 		sensor->query_digit = query_digital;
 		sensor->query_curve = query_curve;
-		port->sensor_num++;
 
 		break;
-	case 26: //站内点码化
+	case 26: //站内电码化
 		sensor->query_analog = query_analog;
-		port->sensor_num++;
 		break;
 	case 29: //无绝缘移频发送传感器
 		sensor->query_analog = query_analog;
-		port->sensor_num++;
 		break;
 
 	case 30: //无绝缘移频接收传感器
 		sensor->query_analog = query_analog;
-		port->sensor_num++;
 		break;
 
 	}
-
 }
 
 static void trigger_tx(struct gather_port* port) {
@@ -167,12 +170,34 @@ static void query_data(struct smart_sensor *sensor, char type) {
 	tx_frame[0] = 0; //src addr
 	tx_frame[1] = (char) sensor->addr; //dest addr
 	tx_frame[2] = type; //request [type-digital,analog etc] data
-	tx_frame[3] = 0xff; //all channel
-	send_frame(pManager, tx_frame, 4);
+	tx_frame[3] = 0xff; //all channel,for query version no sense
+	length=4;
+	if(type == TYPE_VERSION)
+	{
+		length=3;
+	}
+	send_frame(pManager, tx_frame, length);
+
 	trigger_tx(pgather);
-	if (type == TYPE_ANALOG || type == TYPE_DIGITAL) {
+	if (type == TYPE_VERSION) {
+		get_frame(pManager, rx_frame, &length, WAIT_TIMEOUT);
+		if (length > 0) {
+			if (rx_frame[4] == TYPE_VERSION) {
+				sensor->type = rx_frame[5] & 0x7f;
+				sensor->version[0] = rx_frame[5];
+				sensor->version[1] = rx_frame[6];
+				sensor->version[2] = rx_frame[7];
+				sensor->version[3] = rx_frame[8];
+				sensor->version[4] = rx_frame[9];
+				sensor->version[5] = rx_frame[10];
+				init_sensor(sensor);
+			}
+
+		}
+	} else if (type == TYPE_ANALOG || type == TYPE_DIGITAL) {
 		get_frame(pManager, rx_frame + 10, &length, WAIT_TIMEOUT);
 		if (length > 0) {
+			sensor->timeout_count = 0;
 			gettimeofday(&tm, NULL);
 			rx_frame[0] = 0x02; //Serial-data
 			rx_frame[1] = pgather->portIndex; //COM Num
@@ -196,6 +221,7 @@ static void query_data(struct smart_sensor *sensor, char type) {
 
 			get_frame(pManager, rx_frame + 10, &length, WAIT_TIMEOUT);
 			if (length > 0) {
+				sensor->timeout_count = 0;
 				gettimeofday(&tm, NULL);
 				rx_frame[0] = 0x02; //Serial-data
 				rx_frame[1] = pgather->portIndex; //COM Num
@@ -226,16 +252,20 @@ static void query_data(struct smart_sensor *sensor, char type) {
 	}
 }
 
+static void query_version(struct smart_sensor *sensor) {
+	query_data(sensor, TYPE_VERSION);
+}
+
 static void query_digital(struct smart_sensor *sensor) {
 
-	query_data(sensor, 0x20);
+	query_data(sensor, TYPE_DIGITAL);
 }
 
 static void query_analog(struct smart_sensor* sensor) {
-	query_data(sensor, 0x30);
+	query_data(sensor, TYPE_ANALOG);
 }
 static void query_curve(struct smart_sensor *sensor) {
-	query_data(sensor, 0x60);
+	query_data(sensor, TYPE_CURVE);
 }
 
 static void config_led(struct gather_port * pgather) {
@@ -282,6 +312,51 @@ void stop_gather_port(struct gather_port * pgather) {
 
 }
 
+static void query_sensor(struct smart_sensor * sensor) {
+
+	sensor->timeout_count++;
+	if (sensor->timeout_count > MAX_TIMEOUT_COUNT) {
+		sensor->timeout_count = MAX_TIMEOUT_COUNT;
+	}
+	if (sensor->type <0) {
+		query_version(sensor);
+	}
+	if (sensor->query_digit != NULL) //query digital data
+	{
+		sensor->query_digit(sensor);
+	}
+	if (sensor->query_analog != NULL) //query analog data
+	{
+		sensor->query_analog(sensor);
+	}
+	if (sensor->query_curve != NULL) //query curve data
+	{
+		sensor->query_curve(sensor);
+	}
+}
+
+static void query_next_bad_sensor(struct gather_port* pgather) {
+	int startIndex = pgather->last_badsensor;
+	int num = pgather->sensor_num;
+	int i;
+	int index;
+	struct smart_sensor * sensor;
+	for (i = 0; i < num; i++) {
+		index = (i + startIndex) % num;
+		sensor = pgather->sensors + index;
+		if (sensor->timeout_count >= MAX_TIMEOUT_COUNT) {
+
+			query_sensor(sensor);
+
+			pgather->last_badsensor = (index + 1) % num;
+			break;
+
+		}
+
+	}
+
+}
+
 static void * proc_work(void * data) {
 
 	struct timeval start;
@@ -296,23 +371,17 @@ static void * proc_work(void * data) {
 		//printf("q:%d\r\n",pgather->sensor_num);
 		gettimeofday(&start, NULL);
 
+		printf("%d\r\n",pgather->sensor_num);
 		for (i = 0; i < pgather->sensor_num; i++) {
 			struct smart_sensor * sensor = pgather->sensors + i;
 
-			if (sensor->query_digit != NULL) //query digital data
-			{
-				sensor->query_digit(sensor);
-			}
-			if (sensor->query_analog != NULL) //query analog data
-			{
-				sensor->query_analog(sensor);
-			}
-			if (sensor->query_curve != NULL) //query curve data
-			{
-				sensor->query_curve(sensor);
-			}
+			if (sensor->timeout_count >= MAX_TIMEOUT_COUNT)
+				continue;
+			query_sensor(sensor);
 
 		}
+		//query next bad sensor
+		query_next_bad_sensor(pgather);
 
 		gettimeofday(&stop, NULL);
 		timeval_subtract(&diff, &start, &stop);

@@ -59,6 +59,7 @@ struct port_manager * get_port_manager() {
 					if (gather_port != NULL) {
 
 						gather_port->portIndex = atoi(port->name + 3);
+
 						for (j = 0; j < port->sensorNum; j++)  //创建智能传感器
 								{
 							add_sensor_II(gather_port, port->sensors[j].addr,

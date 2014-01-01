@@ -20,10 +20,10 @@ struct smart_sensor
 	struct gather_port * port;
 	int addr;
 	int type;
-
+	int timeout_count;
 	char *tx_data;
 	char *rx_data;
-
+	char version[6];
 	void (*query_digit)(struct smart_sensor *sensor);
 	void (*query_analog)(struct smart_sensor *sensor);
 	void (*query_curve)(struct smart_sensor *sensor);
@@ -46,6 +46,7 @@ struct gather_port
   char rx_data[1024*4];
   int sensor_num;
   struct smart_sensor  sensors[MAX_SENSOR];
+  int last_badsensor;
   struct frame_manager * frame_manager;
   pthread_t thread_wk;
 
