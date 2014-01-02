@@ -35,14 +35,17 @@ static int timeval_subtract(struct timeval* result, struct timeval* x,
 static void query_digital(struct smart_sensor *sensor);
 static void query_analog(struct smart_sensor* sensor);
 static void query_curve(struct smart_sensor *sensor);
+static void query_others(struct smart_sensor *sensor);
 
 static struct gather_port gather_array[MAX_GATHER_NUM];
 
 enum query_type {
+	TYPE_CMD = -1,
 	TYPE_VERSION = 0x07,
 	TYPE_DIGITAL = 0x20,
 	TYPE_ANALOG = 0x30,
 	TYPE_CURVE = 0x60,
+
 };
 
 struct gather_port * create_gather(char* serial_name, int baudrate) {
@@ -62,10 +65,114 @@ struct gather_port * create_gather(char* serial_name, int baudrate) {
 			gather_array[i].serial_fd = serial_fd;
 			gather_array[i].frame_manager = create_frame_manager(serial_fd);
 			gather_array[i].last_badsensor = 0;
+			gather_array[i].cmd_start_index = 0;
+			gather_array[i].cmd_end_index = 0;
 			break;
 		}
 	}
 	return pgather;
+
+}
+
+static void add_sensor_cmd(struct smart_sensor * sensor, char * buffer,
+		int length) {
+	pthread_mutex_t * pMutex = &(sensor->mutext);
+	pthread_mutex_lock(pMutex);
+
+	sensor->cmd_end_index = (sensor->cmd_end_index + 1) % MAX_CMD_COUNT;
+	if (sensor->cmd_end_index == sensor->cmd_start_index) {
+		sensor->cmd_start_index = (sensor->cmd_start_index + 1) % MAX_CMD_COUNT;
+	}
+
+	char * cmd = sensor->cmd_list[sensor->cmd_end_index];
+
+	cmd[0] = length & 0xff;
+	cmd[1] = (length >> 8) & 0xff;
+	int i;
+	for (i = 0; i < length; i++) {
+		cmd[2 + i] = buffer[i];
+	}
+
+	pthread_mutex_unlock(pMutex);
+}
+
+static void get_sensor_cmd(struct smart_sensor * sensor, char* buffer,
+		int *length) {
+	*length = 0;
+	pthread_mutex_t * pMutex = &(sensor->mutext);
+	pthread_mutex_lock(pMutex);
+
+	if (sensor->cmd_end_index != sensor->cmd_start_index) {
+
+		char * cmd = sensor->cmd_list[sensor->cmd_start_index];
+		int len = cmd[0] | (cmd[1] << 8);
+		*length = len;
+		int i;
+		for (i = 0; i < len; i++) {
+			buffer[i] = cmd[2 + i];
+		}
+
+		sensor->cmd_start_index = (sensor->cmd_start_index + 1) % MAX_CMD_COUNT;
+	}
+
+	pthread_mutex_unlock(pMutex);
+
+}
+
+static void get_gather_cmd(struct gather_port * port, char* buffer, int *length) {
+	*length = 0;
+	pthread_mutex_t * pMutex = &(port->mutext);
+	pthread_mutex_lock(pMutex);
+
+	if (port->cmd_end_index != port->cmd_start_index) {
+
+		char * cmd = port->cmd_list[port->cmd_start_index];
+		int len = cmd[0] | (cmd[1] << 8);
+		*length = len;
+		int i;
+		for (i = 0; i < len; i++) {
+			buffer[i] = cmd[2 + i];
+		}
+
+		port->cmd_start_index = (port->cmd_start_index + 1) % MAX_CMD_COUNT;
+	}
+
+	pthread_mutex_unlock(pMutex);
+}
+
+void send_serial_data(struct gather_port *port, char * buffer, int length) {
+
+	char dst_addr = buffer[1];
+	if (dst_addr == (char) 0xff) { //(char) must be exist
+		pthread_mutex_t * pMutex = &(port->mutext);
+		pthread_mutex_lock(pMutex);
+
+		port->cmd_end_index = (port->cmd_end_index + 1) % MAX_CMD_COUNT;
+		if (port->cmd_end_index == port->cmd_start_index) {
+			port->cmd_start_index = (port->cmd_start_index + 1) % MAX_CMD_COUNT;
+		}
+
+		char * cmd = port->cmd_list[port->cmd_end_index];
+
+		cmd[0] = length & 0xff;
+		cmd[1] = (length >> 8) & 0xff;
+		int i;
+		for (i = 0; i < length; i++) {
+			cmd[2 + i] = buffer[i];
+		}
+
+		pthread_mutex_unlock(pMutex);
+	} else {
+
+		int sensor_num = port->sensor_num;
+		int i;
+		for (i = 0; i < sensor_num; i++) {
+			if (port->sensors[i].addr == dst_addr) {
+				add_sensor_cmd(port->sensors + i, buffer, length);
+				break;
+			}
+		}
+	}
 
 }
 
@@ -91,6 +198,9 @@ void add_sensor_II(struct gather_port *port, int addr, int type) {
 	sensor->query_digit = NULL;
 	sensor->query_analog = NULL;
 	sensor->query_curve = NULL;
+	sensor->query_others = NULL;
+	sensor->cmd_start_index = 0;
+	sensor->cmd_end_index = 0;
 	port->sensor_num++;
 
 }
@@ -99,6 +209,7 @@ static void init_sensor(struct smart_sensor* sensor) {
 	sensor->query_digit = NULL;
 	sensor->query_analog = NULL;
 	sensor->query_curve = NULL;
+	sensor->query_others = query_others;
 	switch (sensor->type) {
 	case 16: //Type II 交流道岔表示
 		sensor->query_analog = query_analog;
@@ -171,12 +282,10 @@ static void query_data(struct smart_sensor *sensor, char type) {
 	tx_frame[1] = (char) sensor->addr; //dest addr
 	tx_frame[2] = type; //request [type-digital,analog etc] data
 	tx_frame[3] = 0xff; //all channel,for query version no sense
-	length=4;
-	if(type == TYPE_VERSION)
-	{
-		length=3;
+	if (type == TYPE_VERSION) {
+		tx_frame[3] = 0x01;
 	}
-	send_frame(pManager, tx_frame, length);
+	send_frame(pManager, tx_frame, 4);
 
 	trigger_tx(pgather);
 	if (type == TYPE_VERSION) {
@@ -195,52 +304,58 @@ static void query_data(struct smart_sensor *sensor, char type) {
 
 		}
 	} else if (type == TYPE_ANALOG || type == TYPE_DIGITAL) {
-		get_frame(pManager, rx_frame + 10, &length, WAIT_TIMEOUT);
+		get_frame(pManager, rx_frame + 11, &length, WAIT_TIMEOUT);
 		if (length > 0) {
 			sensor->timeout_count = 0;
 			gettimeofday(&tm, NULL);
 			rx_frame[0] = 0x02; //Serial-data
 			rx_frame[1] = pgather->portIndex; //COM Num
-
+			rx_frame[2] = 0xff;
+			if (sensor->type >= 0) {
+				rx_frame[2] = sensor->type;
+			}
 			long tv_sec = (long) (tm.tv_sec);
-			rx_frame[2] = (tv_sec & 0xff);
-			rx_frame[3] = ((tv_sec >> 8) & 0xff);
-			rx_frame[4] = ((tv_sec >> 16) & 0xff);
-			rx_frame[5] = ((tv_sec >> 24) & 0xff);
+			rx_frame[3] = (tv_sec & 0xff);
+			rx_frame[4] = ((tv_sec >> 8) & 0xff);
+			rx_frame[5] = ((tv_sec >> 16) & 0xff);
+			rx_frame[6] = ((tv_sec >> 24) & 0xff);
 			long tv_usec = (long) (tm.tv_usec);
-			rx_frame[6] = (tv_usec & 0xff);
-			rx_frame[7] = ((tv_usec >> 8) & 0xff);
-			rx_frame[8] = ((tv_usec >> 16) & 0xff);
-			rx_frame[9] = ((tv_usec >> 24) & 0xff);
+			rx_frame[7] = (tv_usec & 0xff);
+			rx_frame[8] = ((tv_usec >> 8) & 0xff);
+			rx_frame[9] = ((tv_usec >> 16) & 0xff);
+			rx_frame[10] = ((tv_usec >> 24) & 0xff);
 
-			send_network_data(portManager, rx_frame, 0, length + 10);
+			send_network_data(portManager, rx_frame, 0, length + 11);
 			trigger_rx(pgather);
 		}
 	} else if (type == TYPE_CURVE) {
 		while (1) {
 
-			get_frame(pManager, rx_frame + 10, &length, WAIT_TIMEOUT);
+			get_frame(pManager, rx_frame + 11, &length, WAIT_TIMEOUT);
 			if (length > 0) {
 				sensor->timeout_count = 0;
 				gettimeofday(&tm, NULL);
 				rx_frame[0] = 0x02; //Serial-data
 				rx_frame[1] = pgather->portIndex; //COM Num
-
+				rx_frame[2] = 0xff;
+				if (sensor->type >= 0) {
+					rx_frame[2] = sensor->type;
+				}
 				long tv_sec = (long) (tm.tv_sec);
-				rx_frame[2] = (tv_sec & 0xff);
-				rx_frame[3] = ((tv_sec >> 8) & 0xff);
-				rx_frame[4] = ((tv_sec >> 16) & 0xff);
-				rx_frame[5] = ((tv_sec >> 24) & 0xff);
+				rx_frame[3] = (tv_sec & 0xff);
+				rx_frame[4] = ((tv_sec >> 8) & 0xff);
+				rx_frame[5] = ((tv_sec >> 16) & 0xff);
+				rx_frame[6] = ((tv_sec >> 24) & 0xff);
 				long tv_usec = (long) (tm.tv_usec);
-				rx_frame[6] = (tv_usec & 0xff);
-				rx_frame[7] = ((tv_usec >> 8) & 0xff);
-				rx_frame[8] = ((tv_usec >> 16) & 0xff);
-				rx_frame[9] = ((tv_usec >> 24) & 0xff);
+				rx_frame[7] = (tv_usec & 0xff);
+				rx_frame[8] = ((tv_usec >> 8) & 0xff);
+				rx_frame[9] = ((tv_usec >> 16) & 0xff);
+				rx_frame[10] = ((tv_usec >> 24) & 0xff);
 
-				send_network_data(portManager, rx_frame, 0, length + 10);
+				send_network_data(portManager, rx_frame, 0, length + 11);
 
 				trigger_rx(pgather);
-				if ((rx_frame[14] == TYPE_CURVE) && (rx_frame[15] == 0xff)) { ////no curve data
+				if ((rx_frame[15] == TYPE_CURVE) && (rx_frame[16] == 0xff)) { ////no curve data
 					break;
 				}
 			}
@@ -266,6 +381,63 @@ static void query_analog(struct smart_sensor* sensor) {
 }
 static void query_curve(struct smart_sensor *sensor) {
 	query_data(sensor, TYPE_CURVE);
+}
+static void query_others(struct smart_sensor *sensor) {
+	struct gather_port* pgather = sensor->port;
+	struct frame_manager *pManager = pgather->frame_manager;
+	struct port_manager * portManager = get_port_manager();
+
+	char *tx_frame = sensor->tx_data;
+	char *rx_frame = sensor->rx_data;
+	struct timeval tm;
+	int length = 0;
+
+	while (1) {
+		get_sensor_cmd(sensor, tx_frame, &length);
+		if (length == 0) //has no cmd
+			break;
+
+		clear_all_frame(pManager);
+		send_frame(pManager, tx_frame, length);
+
+		trigger_tx(pgather);
+
+		while (1) {
+
+			get_frame(pManager, rx_frame + 11, &length, WAIT_TIMEOUT);
+			if (length > 0) {
+				sensor->timeout_count = 0;
+				gettimeofday(&tm, NULL);
+				rx_frame[0] = 0x02; //Serial-data
+				rx_frame[1] = pgather->portIndex; //COM Num
+				rx_frame[2] = 0xff;
+				if (sensor->type >= 0) {
+					rx_frame[2] = sensor->type;
+				}
+				long tv_sec = (long) (tm.tv_sec);
+				rx_frame[3] = (tv_sec & 0xff);
+				rx_frame[4] = ((tv_sec >> 8) & 0xff);
+				rx_frame[5] = ((tv_sec >> 16) & 0xff);
+				rx_frame[6] = ((tv_sec >> 24) & 0xff);
+				long tv_usec = (long) (tm.tv_usec);
+				rx_frame[7] = (tv_usec & 0xff);
+				rx_frame[8] = ((tv_usec >> 8) & 0xff);
+				rx_frame[9] = ((tv_usec >> 16) & 0xff);
+				rx_frame[10] = ((tv_usec >> 24) & 0xff);
+
+				send_network_data(portManager, rx_frame, 0, length + 11);
+
+				trigger_rx(pgather);
+
+			}
+
+			int interval = serial_rx_timeout(pManager);
+			if (interval > WAIT_TIMEOUT)
+				break;
+		}
+
+	}
+
 }
 
 static void config_led(struct gather_port * pgather) {
@@ -317,9 +489,14 @@ static void query_sensor(struct smart_sensor * sensor) {
 	sensor->timeout_count++;
 	if (sensor->timeout_count > MAX_TIMEOUT_COUNT) {
 		sensor->timeout_count = MAX_TIMEOUT_COUNT;
+		sensor->type = -1;
 	}
-	if (sensor->type <0) {
+	if (sensor->type < 0) {
 		query_version(sensor);
+	}
+	if (sensor->query_others != NULL) //first deal with cmd
+	{
+		sensor->query_others(sensor);
 	}
 	if (sensor->query_digit != NULL) //query digital data
 	{
@@ -365,13 +542,22 @@ static void * proc_work(void * data) {
 
 	int i;
 	struct gather_port* pgather = (struct gather_port*) data;
+	struct frame_manager *pManager = pgather->frame_manager;
+	char buffer[100];
+	int length=0;
 
 	while (1) {
 
-		//printf("q:%d\r\n",pgather->sensor_num);
+
 		gettimeofday(&start, NULL);
 
-		printf("%d\r\n",pgather->sensor_num);
+		get_gather_cmd(pgather,buffer,&length);
+		if(length>0)
+		{
+			send_frame(pManager, buffer, length);
+			trigger_tx(pgather);
+		}
+
 		for (i = 0; i < pgather->sensor_num; i++) {
 			struct smart_sensor * sensor = pgather->sensors + i;
 

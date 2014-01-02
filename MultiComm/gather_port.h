@@ -14,7 +14,8 @@
 #include "frame_manager.h"
 
 #define MAX_SENSOR	(200)
-
+#define MAX_CMD_COUNT	(10)
+#define MAX_CMD_LENGTH	(514)
 struct smart_sensor
 {
 	struct gather_port * port;
@@ -24,6 +25,14 @@ struct smart_sensor
 	char *tx_data;
 	char *rx_data;
 	char version[6];
+
+	/*command process*/
+	pthread_mutex_t mutext;
+	int cmd_start_index;
+	int cmd_end_index;
+	char cmd_list[MAX_CMD_COUNT][MAX_CMD_LENGTH];
+
+
 	void (*query_digit)(struct smart_sensor *sensor);
 	void (*query_analog)(struct smart_sensor *sensor);
 	void (*query_curve)(struct smart_sensor *sensor);
@@ -50,6 +59,10 @@ struct gather_port
   struct frame_manager * frame_manager;
   pthread_t thread_wk;
 
+  pthread_mutex_t mutext;
+  int cmd_start_index;
+  int cmd_end_index;
+  char cmd_list[MAX_CMD_COUNT][MAX_CMD_LENGTH];
 
 };
 
@@ -65,5 +78,7 @@ void stop_gather_port(struct gather_port* pgather);
 
 void add_sensor_II(struct gather_port *port, int addr, int type);
 
+
+void send_serial_data(struct gather_port *port, char * buffer,int length);
 
 #endif /* GATHER_H_ */

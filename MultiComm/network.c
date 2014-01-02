@@ -246,9 +246,10 @@ static void process_frame(char* frame, int length) {
 	switch(frame[2])
 	{
 	case 1: //CAN data
-		to_can_data(manager,frame+3);
+		to_can_data(manager,frame+3,length-5);
 		break;
 	case 2: //Serial data
+		to_serial_data(manager,frame+3,length-5);
 		break;
 	}
 

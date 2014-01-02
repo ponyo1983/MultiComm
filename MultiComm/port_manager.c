@@ -111,7 +111,7 @@ void send_network_data(struct port_manager * manager, char* buffer, int offset,
 /*
  * data struct :byte[0]-portIndex, byte[1-4] can-ID ,byte[5]-data-length ,byte[6-N] can-data
  * */
-void to_can_data(struct port_manager* manager, char* buffer) {
+void to_can_data(struct port_manager* manager, char* buffer,int length) {
 	char portIndex = buffer[0];
 
 	int i;
@@ -124,8 +124,16 @@ void to_can_data(struct port_manager* manager, char* buffer) {
 
 }
 
-void to_serial_data(struct port_manager*manager, char *buffer) {
+void to_serial_data(struct port_manager*manager, char *buffer,int length) {
+		char portIndex = buffer[0];
 
+		int i;
+		for (i = 0; i < manager->gather_num; i++) {
+			if (manager->gathers[i]->portIndex == portIndex) {
+				send_serial_data(manager->gathers[i], buffer + 1,length-1);
+				break;
+			}
+		}
 }
 
 static char *get_sys_port(char * port) {
