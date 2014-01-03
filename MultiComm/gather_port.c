@@ -310,21 +310,22 @@ static void query_data(struct smart_sensor *sensor, char type) {
 			gettimeofday(&tm, NULL);
 			rx_frame[0] = 0x02; //Serial-data
 			rx_frame[1] = pgather->portIndex; //COM Num
-			rx_frame[2] = 0xff;
-			if (sensor->type >= 0) {
-				rx_frame[2] = sensor->type;
-			}
-			long tv_sec = (long) (tm.tv_sec);
-			rx_frame[3] = (tv_sec & 0xff);
-			rx_frame[4] = ((tv_sec >> 8) & 0xff);
-			rx_frame[5] = ((tv_sec >> 16) & 0xff);
-			rx_frame[6] = ((tv_sec >> 24) & 0xff);
-			long tv_usec = (long) (tm.tv_usec);
-			rx_frame[7] = (tv_usec & 0xff);
-			rx_frame[8] = ((tv_usec >> 8) & 0xff);
-			rx_frame[9] = ((tv_usec >> 16) & 0xff);
-			rx_frame[10] = ((tv_usec >> 24) & 0xff);
 
+			long tv_sec = (long) (tm.tv_sec);
+			rx_frame[2] = (tv_sec & 0xff);
+			rx_frame[3] = ((tv_sec >> 8) & 0xff);
+			rx_frame[4] = ((tv_sec >> 16) & 0xff);
+			rx_frame[5] = ((tv_sec >> 24) & 0xff);
+			long tv_usec = (long) (tm.tv_usec);
+			rx_frame[6] = (tv_usec & 0xff);
+			rx_frame[7] = ((tv_usec >> 8) & 0xff);
+			rx_frame[8] = ((tv_usec >> 16) & 0xff);
+			rx_frame[9] = ((tv_usec >> 24) & 0xff);
+
+			rx_frame[10] = 0xff;
+			if (sensor->type >= 0) {
+				rx_frame[10] = sensor->type;
+			}
 			send_network_data(portManager, rx_frame, 0, length + 11);
 			trigger_rx(pgather);
 		}
@@ -337,20 +338,22 @@ static void query_data(struct smart_sensor *sensor, char type) {
 				gettimeofday(&tm, NULL);
 				rx_frame[0] = 0x02; //Serial-data
 				rx_frame[1] = pgather->portIndex; //COM Num
-				rx_frame[2] = 0xff;
-				if (sensor->type >= 0) {
-					rx_frame[2] = sensor->type;
-				}
+
 				long tv_sec = (long) (tm.tv_sec);
-				rx_frame[3] = (tv_sec & 0xff);
-				rx_frame[4] = ((tv_sec >> 8) & 0xff);
-				rx_frame[5] = ((tv_sec >> 16) & 0xff);
-				rx_frame[6] = ((tv_sec >> 24) & 0xff);
+				rx_frame[2] = (tv_sec & 0xff);
+				rx_frame[3] = ((tv_sec >> 8) & 0xff);
+				rx_frame[4] = ((tv_sec >> 16) & 0xff);
+				rx_frame[5] = ((tv_sec >> 24) & 0xff);
 				long tv_usec = (long) (tm.tv_usec);
-				rx_frame[7] = (tv_usec & 0xff);
-				rx_frame[8] = ((tv_usec >> 8) & 0xff);
-				rx_frame[9] = ((tv_usec >> 16) & 0xff);
-				rx_frame[10] = ((tv_usec >> 24) & 0xff);
+				rx_frame[6] = (tv_usec & 0xff);
+				rx_frame[7] = ((tv_usec >> 8) & 0xff);
+				rx_frame[8] = ((tv_usec >> 16) & 0xff);
+				rx_frame[9] = ((tv_usec >> 24) & 0xff);
+
+				rx_frame[10] = 0xff;
+				if (sensor->type >= 0) {
+					rx_frame[10] = sensor->type;
+				}
 
 				send_network_data(portManager, rx_frame, 0, length + 11);
 
@@ -544,16 +547,14 @@ static void * proc_work(void * data) {
 	struct gather_port* pgather = (struct gather_port*) data;
 	struct frame_manager *pManager = pgather->frame_manager;
 	char buffer[100];
-	int length=0;
+	int length = 0;
 
 	while (1) {
 
-
 		gettimeofday(&start, NULL);
 
-		get_gather_cmd(pgather,buffer,&length);
-		if(length>0)
-		{
+		get_gather_cmd(pgather, buffer, &length);
+		if (length > 0) {
 			send_frame(pManager, buffer, length);
 			trigger_tx(pgather);
 		}
