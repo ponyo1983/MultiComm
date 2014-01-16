@@ -228,7 +228,7 @@ static void init_sensor(struct smart_sensor* sensor) {
 		sensor->query_curve = query_curve;
 		break;
 	case 21: //高压不对称 ,怎么查询曲线??
-		//sensor->query_analog = query_analog;
+		sensor->query_analog = query_analog;
 		break;
 	case 23: // 半自动闭塞传感器
 		sensor->query_analog = query_analog;

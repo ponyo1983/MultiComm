@@ -12,6 +12,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
 
 #include "network.h"
 #include "port_manager.h"
@@ -91,7 +93,12 @@ void network_send(struct network* network, char* buffer, int offset, int length)
 	for (i = 0; i < MAX_CLIENT_NUM; i++) {
 		if (network->clients[i].used) {
 			if (send(network->clients[i].socket, tx_buffer, index, 0) < 0) {
-				network->clients[i].used = 0;
+				if(errno!=EAGAIN)
+				{
+					network->clients[i].used = 0;
+					close(network->clients[i].socket);
+				}
+
 			}
 		}
 	}
@@ -141,6 +148,10 @@ static void * network_listen(void * arg) {
 			break;
 		}
 
+		//set socket non block
+		int flags = fcntl(sock_client, F_GETFL, 0);
+		fcntl(sock_client, F_SETFL, flags | O_NONBLOCK);
+
 		index = create_client(pNetwork, sock_client);
 
 		if (index < 0) {
@@ -178,15 +189,24 @@ static void * client_proc(void * arg) {
 	int metDLE = 0;
 	int length;
 	int i;
+	fd_set rdFds;
 	while (1) {
+
+		FD_ZERO(&rdFds);
+		FD_SET(pClient->socket, &rdFds);
+		int ret = select(pClient->socket + 1, &rdFds, NULL, NULL, NULL);
+
+		if (ret == -1) {
+			pClient->used = 0;
+			close(pClient->socket);
+			break;
+		}
+
+		if(!FD_ISSET(pClient->socket,&rdFds)) continue;
 
 		length = recv(pClient->socket, rx_buffer, sizeof(rx_buffer), 0);
 
-		if (length < 0) {
 
-			pClient->used = 0;
-			break;
-		}
 
 		for (i = 0; i < length; i++) {
 
@@ -242,14 +262,13 @@ static void * client_proc(void * arg) {
 
 static void process_frame(char* frame, int length) {
 
-	struct port_manager * manager=get_port_manager();
-	switch(frame[2])
-	{
+	struct port_manager * manager = get_port_manager();
+	switch (frame[2]) {
 	case 1: //CAN data
-		to_can_data(manager,frame+3,length-5);
+		to_can_data(manager, frame + 3, length - 5);
 		break;
 	case 2: //Serial data
-		to_serial_data(manager,frame+3,length-5);
+		to_serial_data(manager, frame + 3, length - 5);
 		break;
 	}
 
