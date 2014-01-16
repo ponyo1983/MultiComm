@@ -413,21 +413,22 @@ static void query_others(struct smart_sensor *sensor) {
 				gettimeofday(&tm, NULL);
 				rx_frame[0] = 0x02; //Serial-data
 				rx_frame[1] = pgather->portIndex; //COM Num
-				rx_frame[2] = 0xff;
-				if (sensor->type >= 0) {
-					rx_frame[2] = sensor->type;
-				}
-				long tv_sec = (long) (tm.tv_sec);
-				rx_frame[3] = (tv_sec & 0xff);
-				rx_frame[4] = ((tv_sec >> 8) & 0xff);
-				rx_frame[5] = ((tv_sec >> 16) & 0xff);
-				rx_frame[6] = ((tv_sec >> 24) & 0xff);
-				long tv_usec = (long) (tm.tv_usec);
-				rx_frame[7] = (tv_usec & 0xff);
-				rx_frame[8] = ((tv_usec >> 8) & 0xff);
-				rx_frame[9] = ((tv_usec >> 16) & 0xff);
-				rx_frame[10] = ((tv_usec >> 24) & 0xff);
 
+				long tv_sec = (long) (tm.tv_sec);
+				rx_frame[2] = (tv_sec & 0xff);
+				rx_frame[3] = ((tv_sec >> 8) & 0xff);
+				rx_frame[4] = ((tv_sec >> 16) & 0xff);
+				rx_frame[5] = ((tv_sec >> 24) & 0xff);
+				long tv_usec = (long) (tm.tv_usec);
+				rx_frame[6] = (tv_usec & 0xff);
+				rx_frame[7] = ((tv_usec >> 8) & 0xff);
+				rx_frame[8] = ((tv_usec >> 16) & 0xff);
+				rx_frame[9] = ((tv_usec >> 24) & 0xff);
+
+				rx_frame[10] = 0xff;
+				if (sensor->type >= 0) {
+					rx_frame[10] = sensor->type;
+				}
 				send_network_data(portManager, rx_frame, 0, length + 11);
 
 				trigger_rx(pgather);

@@ -190,15 +190,17 @@ static void * client_proc(void * arg) {
 	int length;
 	int i;
 	fd_set rdFds;
+	fd_set wrFds;
 	while (1) {
 
 		FD_ZERO(&rdFds);
+		FD_ZERO(&wrFds);
 		FD_SET(pClient->socket, &rdFds);
-		int ret = select(pClient->socket + 1, &rdFds, NULL, NULL, NULL);
+		FD_SET(pClient->socket, &wrFds);
+		int ret = select(pClient->socket + 1, &rdFds, &wrFds, NULL, NULL);
 
 		if (ret == -1) {
 			pClient->used = 0;
-			close(pClient->socket);
 			break;
 		}
 
@@ -206,7 +208,11 @@ static void * client_proc(void * arg) {
 
 		length = recv(pClient->socket, rx_buffer, sizeof(rx_buffer), 0);
 
-
+		if(length<=0)
+		{
+			pClient->used = 0;
+			break;
+		}
 
 		for (i = 0; i < length; i++) {
 
@@ -256,6 +262,7 @@ static void * client_proc(void * arg) {
 		}
 
 	}
+	close(pClient->socket);
 	return NULL;
 
 }
