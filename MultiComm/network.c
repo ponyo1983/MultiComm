@@ -93,8 +93,7 @@ void network_send(struct network* network, char* buffer, int offset, int length)
 	for (i = 0; i < MAX_CLIENT_NUM; i++) {
 		if (network->clients[i].used) {
 			if (send(network->clients[i].socket, tx_buffer, index, 0) < 0) {
-				if(errno!=EAGAIN)
-				{
+				if (errno != EAGAIN) {
 					network->clients[i].used = 0;
 					close(network->clients[i].socket);
 				}
@@ -190,74 +189,78 @@ static void * client_proc(void * arg) {
 	int length;
 	int i;
 	fd_set rdFds;
-	fd_set wrFds;
+	fd_set errFds;
 	while (1) {
 
 		FD_ZERO(&rdFds);
-		FD_ZERO(&wrFds);
+		FD_ZERO(&errFds);
 		FD_SET(pClient->socket, &rdFds);
-		FD_SET(pClient->socket, &wrFds);
-		int ret = select(pClient->socket + 1, &rdFds, &wrFds, NULL, NULL);
+		FD_SET(pClient->socket, &errFds);
+		int ret = select(pClient->socket + 1, &rdFds, NULL, &errFds, NULL);
 
 		if (ret == -1) {
 			pClient->used = 0;
 			break;
 		}
 
-		if(!FD_ISSET(pClient->socket,&rdFds)) continue;
-
-		length = recv(pClient->socket, rx_buffer, sizeof(rx_buffer), 0);
-
-		if(length<=0)
-		{
+		if (FD_ISSET(pClient->socket, &errFds)) {
 			pClient->used = 0;
 			break;
 		}
 
-		for (i = 0; i < length; i++) {
+		if (FD_ISSET(pClient->socket, &rdFds)) {
+			length = recv(pClient->socket, rx_buffer, sizeof(rx_buffer), 0);
 
-			switch (rx_buffer[i]) {
-			case DLE:
-				if (frameLength >= 2 && (metDLE == 0)) {
-					frame_buffer[frameLength] = DLE;
-					frameLength++;
-				}
-				metDLE = 1 - metDLE;
-				break;
-			case STX:
-				if (metDLE) {
-					frame_buffer[0] = DLE;
-					frame_buffer[1] = STX;
-					frameLength = 2;
-				} else if (frameLength >= 2) {
-					frame_buffer[frameLength] = STX;
-					frameLength++;
-				}
-				metDLE = 0;
-				break;
-			case ETX:
-				if (frameLength >= 2) {
-					frame_buffer[frameLength] = ETX;
-					frameLength++;
-					if (metDLE) //got a new frame
-					{
-						process_frame(frame_buffer, frameLength);
-						frameLength = 0;
-					}
-				}
-				metDLE = 0;
-				break;
-			default:
-				if (frameLength >= 2) {
-					frame_buffer[frameLength] = rx_buffer[i];
-					frameLength++;
-				}
-				metDLE = 0;
+			if (length <= 0) {
+				pClient->used = 0;
 				break;
 			}
-			if (frameLength >= sizeof(frame_buffer)) {
-				frameLength = 0;
-				metDLE = 0;
+
+			for (i = 0; i < length; i++) {
+
+				switch (rx_buffer[i]) {
+				case DLE:
+					if (frameLength >= 2 && (metDLE == 0)) {
+						frame_buffer[frameLength] = DLE;
+						frameLength++;
+					}
+					metDLE = 1 - metDLE;
+					break;
+				case STX:
+					if (metDLE) {
+						frame_buffer[0] = DLE;
+						frame_buffer[1] = STX;
+						frameLength = 2;
+					} else if (frameLength >= 2) {
+						frame_buffer[frameLength] = STX;
+						frameLength++;
+					}
+					metDLE = 0;
+					break;
+				case ETX:
+					if (frameLength >= 2) {
+						frame_buffer[frameLength] = ETX;
+						frameLength++;
+						if (metDLE) //got a new frame
+						{
+							process_frame(frame_buffer, frameLength);
+							frameLength = 0;
+						}
+					}
+					metDLE = 0;
+					break;
+				default:
+					if (frameLength >= 2) {
+						frame_buffer[frameLength] = rx_buffer[i];
+						frameLength++;
+					}
+					metDLE = 0;
+					break;
+				}
+				if (frameLength >= sizeof(frame_buffer)) {
+					frameLength = 0;
+					metDLE = 0;
+				}
 			}
 		}
 
