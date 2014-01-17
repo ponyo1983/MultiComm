@@ -20,7 +20,7 @@
 #define MAX_GATHER_NUM (10)
 
 #define QUERY_INTERVAL	(1000000) //1S
-#define WAIT_TIMEOUT (30)	//30ms
+#define WAIT_TIMEOUT (50)	//50ms
 
 #define LED_DELAY	"30"
 
