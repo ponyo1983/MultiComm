@@ -22,6 +22,7 @@ struct smart_sensor
 	int addr;
 	int type;
 	int timeout_count;
+	int wait_time; //wait for sensor boot to app
 	char *tx_data;
 	char *rx_data;
 	char version[6];

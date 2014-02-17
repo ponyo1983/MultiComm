@@ -24,7 +24,7 @@
 
 #define LED_DELAY	"30"
 
-#define MAX_TIMEOUT_COUNT (5)
+#define MAX_TIMEOUT_COUNT (20) //sensor boot up need a about 15seconds
 
 static int open_serial(char *port, int baudrate);
 static speed_t get_speed(int baudrate);
@@ -205,7 +205,8 @@ void add_sensor_II(struct gather_port *port, int addr, int type) {
 
 }
 
-static void init_sensor(struct smart_sensor* sensor) {
+static void init_sensor(struct smart_sensor* sensor,int wait_time) {
+	sensor->wait_time=wait_time;
 	sensor->query_digit = NULL;
 	sensor->query_analog = NULL;
 	sensor->query_curve = NULL;
@@ -299,7 +300,12 @@ static void query_data(struct smart_sensor *sensor, char type) {
 				sensor->version[3] = rx_frame[8];
 				sensor->version[4] = rx_frame[9];
 				sensor->version[5] = rx_frame[10];
-				init_sensor(sensor);
+				int wait_time=20;
+				if(rx_frame[5]!=(0x80+19)) //jldc sensor in bios mode
+				{
+					wait_time=0;
+				}
+				init_sensor(sensor,wait_time);
 			}
 
 		}
@@ -490,6 +496,11 @@ void stop_gather_port(struct gather_port * pgather) {
 
 static void query_sensor(struct smart_sensor * sensor) {
 
+	if(sensor->wait_time>0)
+	{
+		sensor->wait_time--;
+		return;
+	}
 	sensor->timeout_count++;
 	if (sensor->timeout_count > MAX_TIMEOUT_COUNT) {
 		sensor->timeout_count = MAX_TIMEOUT_COUNT;
