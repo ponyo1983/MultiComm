@@ -205,8 +205,8 @@ void add_sensor_II(struct gather_port *port, int addr, int type) {
 
 }
 
-static void init_sensor(struct smart_sensor* sensor,int wait_time) {
-	sensor->wait_time=wait_time;
+static void init_sensor(struct smart_sensor* sensor, int wait_time) {
+	sensor->wait_time = wait_time;
 	sensor->query_digit = NULL;
 	sensor->query_analog = NULL;
 	sensor->query_curve = NULL;
@@ -300,12 +300,12 @@ static void query_data(struct smart_sensor *sensor, char type) {
 				sensor->version[3] = rx_frame[8];
 				sensor->version[4] = rx_frame[9];
 				sensor->version[5] = rx_frame[10];
-				int wait_time=20;
-				if(rx_frame[5]!=(0x80+19)) //jldc sensor in bios mode
-				{
-					wait_time=0;
+				int wait_time = 0;
+				if (rx_frame[5] == 19) //jldc sensor in bios mode
+						{
+					wait_time = 20;
 				}
-				init_sensor(sensor,wait_time);
+				init_sensor(sensor, wait_time);
 			}
 
 		}
@@ -494,10 +494,18 @@ void stop_gather_port(struct gather_port * pgather) {
 
 }
 
+static query_dc_digital(struct smart_sensor * sensor) {
+	if (sensor->type != 19)
+		return;
+	if (sensor->query_digit != NULL) //query digital data
+	{
+		sensor->query_digit(sensor);
+	}
+
+}
 static void query_sensor(struct smart_sensor * sensor) {
 
-	if(sensor->wait_time>0)
-	{
+	if (sensor->wait_time > 0) {
 		sensor->wait_time--;
 		return;
 	}
@@ -570,7 +578,7 @@ static void * proc_work(void * data) {
 			send_frame(pManager, buffer, length);
 			trigger_tx(pgather);
 		}
-
+		//query all data
 		for (i = 0; i < pgather->sensor_num; i++) {
 			struct smart_sensor * sensor = pgather->sensors + i;
 
@@ -579,6 +587,16 @@ static void * proc_work(void * data) {
 			query_sensor(sensor);
 
 		}
+		//query dc sensor digital
+		for (i = 0; i < pgather->sensor_num; i++) {
+			struct smart_sensor * sensor = pgather->sensors + i;
+
+			if (sensor->timeout_count >= MAX_TIMEOUT_COUNT)
+				continue;
+			query_dc_digital(sensor);
+
+		}
+
 		//query next bad sensor
 		query_next_bad_sensor(pgather);
 
