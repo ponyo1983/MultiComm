@@ -494,7 +494,7 @@ void stop_gather_port(struct gather_port * pgather) {
 
 }
 
-static query_dc_digital(struct smart_sensor * sensor) {
+static void query_dc_digital(struct smart_sensor * sensor) {
 	if (sensor->type != 19)
 		return;
 	if (sensor->query_digit != NULL) //query digital data
