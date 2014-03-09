@@ -21,7 +21,7 @@ struct smart_sensor
 	struct gather_port * port;
 	int addr;
 	int type;
-	int timeout_count;
+	struct timeval last_response;
 	int wait_time; //wait for sensor boot to app
 	char *tx_data;
 	char *rx_data;

@@ -24,13 +24,11 @@
 
 #define LED_DELAY	"30"
 
-#define MAX_TIMEOUT_COUNT (20) //sensor boot up need a about 15seconds
+#define MAX_TIMEOUT_SECONDS (20) //sensor boot up need a about 15seconds
 
 static int open_serial(char *port, int baudrate);
 static speed_t get_speed(int baudrate);
 static void * proc_work(void * data);
-static int timeval_subtract(struct timeval* result, struct timeval* x,
-		struct timeval* y);
 
 static void query_digital(struct smart_sensor *sensor);
 static void query_analog(struct smart_sensor* sensor);
@@ -47,6 +45,13 @@ enum query_type {
 	TYPE_CURVE = 0x60,
 
 };
+
+static long timevaldiff(struct timeval *starttime, struct timeval *finishtime) {
+	long msec;
+	msec = (finishtime->tv_sec - starttime->tv_sec) * 1000;
+	msec += (finishtime->tv_usec - starttime->tv_usec) / 1000;
+	return msec;
+}
 
 struct gather_port * create_gather(char* serial_name, int baudrate) {
 
@@ -192,7 +197,6 @@ void add_sensor_II(struct gather_port *port, int addr, int type) {
 	sensor->port = port;
 	sensor->addr = addr;
 	sensor->type = type;
-	sensor->timeout_count = 0;
 	sensor->tx_data = port->tx_data;
 	sensor->rx_data = port->rx_data;
 	sensor->query_digit = NULL;
@@ -201,6 +205,7 @@ void add_sensor_II(struct gather_port *port, int addr, int type) {
 	sensor->query_others = NULL;
 	sensor->cmd_start_index = 0;
 	sensor->cmd_end_index = 0;
+	gettimeofday(&(sensor->last_response), NULL);
 	port->sensor_num++;
 
 }
@@ -211,6 +216,7 @@ static void init_sensor(struct smart_sensor* sensor, int wait_time) {
 	sensor->query_analog = NULL;
 	sensor->query_curve = NULL;
 	sensor->query_others = query_others;
+	gettimeofday(&(sensor->last_response), NULL);
 	switch (sensor->type) {
 	case 16: //Type II 交流道岔表示
 		sensor->query_analog = query_analog;
@@ -312,8 +318,8 @@ static void query_data(struct smart_sensor *sensor, char type) {
 	} else if (type == TYPE_ANALOG || type == TYPE_DIGITAL) {
 		get_frame(pManager, rx_frame + 11, &length, WAIT_TIMEOUT);
 		if (length > 0) {
-			sensor->timeout_count = 0;
 			gettimeofday(&tm, NULL);
+			sensor->last_response = tm;
 			rx_frame[0] = 0x02; //Serial-data
 			rx_frame[1] = pgather->portIndex; //COM Num
 
@@ -340,8 +346,8 @@ static void query_data(struct smart_sensor *sensor, char type) {
 
 			get_frame(pManager, rx_frame + 11, &length, WAIT_TIMEOUT);
 			if (length > 0) {
-				sensor->timeout_count = 0;
 				gettimeofday(&tm, NULL);
+				sensor->last_response = tm;
 				rx_frame[0] = 0x02; //Serial-data
 				rx_frame[1] = pgather->portIndex; //COM Num
 
@@ -415,8 +421,8 @@ static void query_others(struct smart_sensor *sensor) {
 
 			get_frame(pManager, rx_frame + 11, &length, WAIT_TIMEOUT);
 			if (length > 0) {
-				sensor->timeout_count = 0;
 				gettimeofday(&tm, NULL);
+				sensor->last_response = tm;
 				rx_frame[0] = 0x02; //Serial-data
 				rx_frame[1] = pgather->portIndex; //COM Num
 
@@ -503,19 +509,22 @@ static void query_dc_digital(struct smart_sensor * sensor) {
 	}
 
 }
-static void query_sensor(struct smart_sensor * sensor) {
+static void query_sensor(struct smart_sensor * sensor,
+		struct timeval* current_time) {
 
+	long diff = 0;
 	if (sensor->wait_time > 0) {
 		sensor->wait_time--;
 		return;
 	}
-	sensor->timeout_count++;
-	if (sensor->timeout_count > MAX_TIMEOUT_COUNT) {
-		sensor->timeout_count = MAX_TIMEOUT_COUNT;
+
+	diff = timevaldiff(&(sensor->last_response), current_time);
+	if (diff >= MAX_TIMEOUT_SECONDS * 1000) {
 		sensor->type = -1;
 	}
 	if (sensor->type < 0) {
 		query_version(sensor);
+		return;
 	}
 	if (sensor->query_others != NULL) //first deal with cmd
 	{
@@ -535,18 +544,51 @@ static void query_sensor(struct smart_sensor * sensor) {
 	}
 }
 
-static void query_next_bad_sensor(struct gather_port* pgather) {
+static void query_all_active_sensor(struct gather_port* pgather,
+		struct timeval* current_time) {
+	int i;
+	long diff = 0;
+	for (i = 0; i < pgather->sensor_num; i++) {
+		struct smart_sensor * sensor = pgather->sensors + i;
+
+		diff = timevaldiff(&(sensor->last_response), current_time);
+		if (diff >= MAX_TIMEOUT_SECONDS * 1000)
+			continue;
+		query_sensor(sensor, current_time);
+
+	}
+}
+
+static void query_active_dc_digital(struct gather_port* pgather,
+		struct timeval* current_time) {
+	int i;
+	long diff=0;
+	for (i = 0; i < pgather->sensor_num; i++) {
+		struct smart_sensor * sensor = pgather->sensors + i;
+
+		diff = timevaldiff(&(sensor->last_response), current_time);
+		if (diff >= MAX_TIMEOUT_SECONDS * 1000)
+			continue;
+		query_dc_digital(sensor);
+
+	}
+}
+
+static void query_next_bad_sensor(struct gather_port* pgather,
+		struct timeval* current_time) {
 	int startIndex = pgather->last_badsensor;
 	int num = pgather->sensor_num;
 	int i;
 	int index;
 	struct smart_sensor * sensor;
+	long diff = 0;
 	for (i = 0; i < num; i++) {
 		index = (i + startIndex) % num;
 		sensor = pgather->sensors + index;
-		if (sensor->timeout_count >= MAX_TIMEOUT_COUNT) {
+		diff = timevaldiff(&(sensor->last_response), current_time);
+		if (diff >= MAX_TIMEOUT_SECONDS * 1000) {
 
-			query_sensor(sensor);
+			query_sensor(sensor, current_time);
 
 			pgather->last_badsensor = (index + 1) % num;
 			break;
@@ -561,9 +603,7 @@ static void * proc_work(void * data) {
 
 	struct timeval start;
 	struct timeval stop;
-	struct timeval diff;
 
-	int i;
 	struct gather_port* pgather = (struct gather_port*) data;
 	struct frame_manager *pManager = pgather->frame_manager;
 	char buffer[100];
@@ -579,31 +619,15 @@ static void * proc_work(void * data) {
 			trigger_tx(pgather);
 		}
 		//query all data
-		for (i = 0; i < pgather->sensor_num; i++) {
-			struct smart_sensor * sensor = pgather->sensors + i;
-
-			if (sensor->timeout_count >= MAX_TIMEOUT_COUNT)
-				continue;
-			query_sensor(sensor);
-
-		}
+		query_all_active_sensor(pgather, &start);
 		//query dc sensor digital
-		for (i = 0; i < pgather->sensor_num; i++) {
-			struct smart_sensor * sensor = pgather->sensors + i;
-
-			if (sensor->timeout_count >= MAX_TIMEOUT_COUNT)
-				continue;
-			query_dc_digital(sensor);
-
-		}
-
+		query_active_dc_digital(pgather, &start);
 		//query next bad sensor
-		query_next_bad_sensor(pgather);
+		query_next_bad_sensor(pgather, &start);
 
 		gettimeofday(&stop, NULL);
-		timeval_subtract(&diff, &start, &stop);
 
-		__useconds_t interval = diff.tv_sec * 1000000 + diff.tv_usec + 10000;
+		__useconds_t interval = timevaldiff(&start, &stop) * 1000 + 10000;
 
 		if (interval < QUERY_INTERVAL) {
 			usleep(QUERY_INTERVAL - interval);
@@ -611,27 +635,6 @@ static void * proc_work(void * data) {
 	}
 
 	return NULL;
-}
-
-static int timeval_subtract(struct timeval* result, struct timeval* x,
-		struct timeval* y) {
-	//int nsec;
-
-	if (x->tv_sec > y->tv_sec)
-		return -1;
-
-	if ((x->tv_sec == y->tv_sec) && (x->tv_usec > y->tv_usec))
-		return -1;
-
-	result->tv_sec = (y->tv_sec - x->tv_sec);
-	result->tv_usec = (y->tv_usec - x->tv_usec);
-
-	if (result->tv_usec < 0) {
-		result->tv_sec--;
-		result->tv_usec += 1000000;
-	}
-
-	return 0;
 }
 
 static int open_serial(char *port, int baudrate) {
