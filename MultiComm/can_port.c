@@ -47,7 +47,10 @@ struct can_port * create_can_port(char *name, int baudrate) {
 			pPort->name[length] = '\0';
 			pPort->bandrate = baudrate;
 			pPort->portIndex = atoi(name + 3);
-
+			if(pPort->portIndex==3) //CAN3->"can0"
+			{
+				pPort->name[3]='0';
+			}
 			break;
 		}
 	}
@@ -58,7 +61,7 @@ struct can_port * create_can_port(char *name, int baudrate) {
 static void config_led(struct can_port * port) {
 	char led_name[30];
 	int fd;
-	int pIndex=(port->portIndex+2)%3;
+	int pIndex=((port->portIndex)%3+2)%3;
 	sprintf(led_name, "/sys/class/leds/can%d_tx/delay_on", pIndex);
 	fd = open(led_name, O_WRONLY);
 	if (fd > 0) {
