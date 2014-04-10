@@ -20,6 +20,7 @@ struct can_port {
 	int tx_led_fd;
 	int rx_led_fd;
 	int socket;
+	int snd_num;
 	pthread_t threadRx;
 
 };

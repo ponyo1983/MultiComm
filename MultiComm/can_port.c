@@ -44,12 +44,13 @@ struct can_port * create_can_port(char *name, int baudrate) {
 			for (j = 0; j < length; j++) {
 				pPort->name[j] = tolower(name[j]);
 			}
+			pPort->snd_num = 0;
 			pPort->name[length] = '\0';
 			pPort->bandrate = baudrate;
 			pPort->portIndex = atoi(name + 3);
-			if(pPort->portIndex==3) //CAN3->"can0"
-			{
-				pPort->name[3]='0';
+			if (pPort->portIndex == 3) //CAN3->"can0"
+					{
+				pPort->name[3] = '0';
 			}
 			break;
 		}
@@ -57,11 +58,10 @@ struct can_port * create_can_port(char *name, int baudrate) {
 	return pPort;
 }
 
-
 static void config_led(struct can_port * port) {
 	char led_name[30];
 	int fd;
-	int pIndex=((port->portIndex)%3+2)%3;
+	int pIndex = ((port->portIndex) % 3 + 2) % 3;
 	sprintf(led_name, "/sys/class/leds/can%d_tx/delay_on", pIndex);
 	fd = open(led_name, O_WRONLY);
 	if (fd > 0) {
@@ -120,7 +120,6 @@ static void trigger_rx(struct can_port *port) {
 	}
 }
 
-
 void stop_can_port(struct can_port * port) {
 
 }
@@ -146,8 +145,15 @@ void send_can_data(struct can_port *port, char * buffer) {
 		frame.data[i] = buffer[5 + i];
 	}
 	int ret = write(port->socket, &frame, sizeof(frame));
+
 	if (ret != -1) {
 		trigger_tx(port);
+
+	}
+	port->snd_num++;
+	if (port->snd_num >= 5) {
+		port->snd_num=0;
+		usleep(100);
 	}
 
 }
@@ -198,8 +204,7 @@ static void * can_rx_proc(void * arg) {
 		} else {
 
 			int count = nbytes / sizeof(struct can_frame);
-			if(count>0)
-			{
+			if (count > 0) {
 				trigger_rx(port);
 			}
 			for (j = 0; j < count; j++) {
